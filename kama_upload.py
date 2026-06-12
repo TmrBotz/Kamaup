@@ -136,9 +136,18 @@ async def start_workers(ptb_bot: Bot):
         # Pehli baar thoda time lagta hai, uske baad session file
         # mein save rehta hai aur restart pe bhi kaam karta hai.
         log.info(f"[{SOURCE_NAME}|Upload] Resolving upload channel peer...")
-        await _pyro_client.send_chat_action(
+
+        # Bot mode mein fresh session pe peer resolve karne ka
+        # ek hi reliable tarika: send_message() — isse Telegram
+        # peer info return karta hai jo session mein cache ho jaata hai.
+        # Baad mein yeh message delete kar dete hain.
+        warmup_msg = await _pyro_client.send_message(
             chat_id=raw_id,
-            action="cancel",
+            text="⚙️ Bot started.",
+        )
+        await _pyro_client.delete_messages(
+            chat_id=raw_id,
+            message_ids=warmup_msg.id,
         )
 
         chat = await _pyro_client.get_chat(raw_id)
