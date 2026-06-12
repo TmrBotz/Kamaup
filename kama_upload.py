@@ -119,6 +119,20 @@ async def start_workers(ptb_bot: Bot):
     await _pyro_client.start()
     log.info(f"[{SOURCE_NAME}|Upload] ✅ Pyrogram client started")
 
+    # ── Channel resolve karo — PEER_ID_INVALID fix ──
+    try:
+        chat = await _pyro_client.get_chat(int(UPLOAD_CHANNEL_ID))
+        log.info(
+            f"[{SOURCE_NAME}|Upload] "
+            f"✅ Upload channel resolved: {chat.title}"
+        )
+    except Exception as e:
+        log.error(
+            f"[{SOURCE_NAME}|Upload] "
+            f"❌ Upload channel resolve failed: {e}"
+        )
+        raise
+
     # ── Queue init ────────────────────────────
     _job_queue = asyncio.Queue(maxsize=QUEUE_MAX_SIZE)
 
