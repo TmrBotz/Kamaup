@@ -1,7 +1,5 @@
 # ======================================================
 # 🔥 Code Created by @TMR_Supportt_bot | Tmr_Developer
-# 🔥 Code Created by @TMR_Supportt_bot | Tmr_Developer
-# 🔥 Code Created by @TMR_Supportt_bot | Tmr_Developer
 # ======================================================
 
 """
@@ -14,7 +12,7 @@ import asyncio
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-from pymongo import MongoClient
+from motor.motor_asyncio import AsyncIOMotorClient
 from telegram import Bot, Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -81,13 +79,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-# ======================================================
-# 🔥 Code Created by @TMR_Supportt_bot | Tmr_Developer
-# 🔥 Code Created by @TMR_Supportt_bot | Tmr_Developer
-# 🔥 Code Created by @TMR_Supportt_bot | Tmr_Developer
-# ======================================================
-
     await update.message.reply_text(
         "📖 <b>Help</b>\n\n"
         "🔸 /kama &lt;url&gt;\n"
@@ -99,10 +90,10 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = context.bot_data["db"]
     try:
-        db.client.admin.command("ping")
+        await db.client.admin.command("ping")
         db_status  = "✅ Connected"
-        kama_count = db["kama_seen"].count_documents({})
-        vid_count  = db["kama_videos"].count_documents({})
+        kama_count = await db["kama_seen"].count_documents({})
+        vid_count  = await db["kama_videos"].count_documents({})
     except Exception as e:
         db_status  = f"❌ {e}"
         kama_count = vid_count = "N/A"
@@ -126,17 +117,17 @@ async def main():
     # 1. Health server
     threading.Thread(target=start_health_server, daemon=True).start()
 
-    # 2. MongoDB
+    # 2. MongoDB (Motor - Async Client)
     try:
-        mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-        mongo_client.admin.command("ping")
+        mongo_client = AsyncIOMotorClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        await mongo_client.admin.command("ping")
         db = mongo_client["movie_rss_bot"]
         log.info("✅ MongoDB connected!")
     except Exception as e:
         log.error(f"❌ MongoDB failed: {e}")
         raise
 
-    # 3. Init
+    # 3. Init modules
     kama.init(db)
     kama_upload.init(db)
 
@@ -158,6 +149,7 @@ async def main():
         await app.start()
         await app.updater.start_polling(drop_pending_updates=True)
 
+        # ✅ kama_upload workers startup pe start honge
         await kama_upload.start_workers(bot)
 
         try:
@@ -165,6 +157,7 @@ async def main():
                 kama.rss_loop(bot),
             )
         finally:
+            # ✅ Graceful shutdown pe workers band honge
             await kama_upload.stop_workers()
 
         await app.updater.stop()
@@ -176,7 +169,4 @@ if __name__ == "__main__":
 
 # ======================================================
 # 🔥 Code Created by @TMR_Supportt_bot | Tmr_Developer
-# 🔥 Code Created by @TMR_Supportt_bot | Tmr_Developer
-# 🔥 Code Created by @TMR_Supportt_bot | Tmr_Developer
 # ======================================================
-
