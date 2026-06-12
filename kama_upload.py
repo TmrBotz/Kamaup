@@ -144,23 +144,11 @@ async def start_workers(ptb_bot: Bot):
     log.info(f"[{SOURCE_NAME}|Upload] ✅ Pyrogram client started")
 
     # ── Peer Resolution — PEER_ID_INVALID Fix ──
-    # Problem: Bot fresh start pe private channel ka peer cache empty hota hai
-    # Pyrogram integer chat_id se directly kaam nahi karta jab tak
-    # peer ek baar seen na ho.
-    #
-    # CORRECT FIX: join_chat ya get_chat se peer resolve karo.
-    # Bot pehle se channel mein admin hona chahiye.
-    #
-    # Method: send_message → delete (warmup) approach RISKY hai agar
-    # channel mein message permission nahi. Isliye get_chat() hi use karo
-    # aur agar PeerIdInvalid aaye to channel ID check karo.
-
     raw_id = _parse_channel_id(UPLOAD_CHANNEL_ID)
     log.info(f"[{SOURCE_NAME}|Upload] Resolving upload channel: {raw_id}")
 
     for attempt in range(1, 4):
         try:
-            # get_chat peer ko resolve karta hai aur session mein cache karta hai
             chat = await _pyro_client.get_chat(raw_id)
             _UPLOAD_PEER = chat.id
 
@@ -171,8 +159,6 @@ async def start_workers(ptb_bot: Bot):
             break
 
         except PeerIdInvalid:
-            # Bot ne channel join nahi kiya / channel ID galat hai
-            # Fix: Bot ko channel mein add karo manually
             log.error(
                 f"[{SOURCE_NAME}|Upload] ❌ PeerIdInvalid (attempt {attempt}): "
                 f"Channel ID={raw_id}\n"
@@ -397,7 +383,7 @@ async def _download_video(
             tmp.close()
 
             timeout = aiohttp.ClientTimeout(
-                total=900,     # 15 min max (large files ke liye)
+                total=900,
                 connect=30,
                 sock_read=120,
             )
@@ -499,7 +485,6 @@ async def _upload_video(
                 caption=f"🎬 {title}",
                 thumb=thumb_path if thumb_path else None,
                 supports_streaming=True,
-                # Progress callback (optional — large files ke liye helpful)
                 progress=_upload_progress,
                 progress_args=(worker_id, title),
             )
@@ -515,14 +500,13 @@ async def _upload_video(
             return msg.id
 
         except FloodWait as e:
-            # FIX: FloodWait pe attempt count mat badhao
             wait_time = e.value + 5
             log.warning(
                 f"[{SOURCE_NAME}|Worker-{worker_id}] "
                 f"⏳ FloodWait: {e.value}s — waiting {wait_time}s..."
             )
             await asyncio.sleep(wait_time)
-            attempt -= 1   # retry free mein milti hai FloodWait ke baad
+            attempt -= 1
 
         except PeerIdInvalid:
             log.error(
@@ -569,7 +553,7 @@ async def _upload_progress(current: int, total: int, worker_id: int, title: str)
     """Upload progress callback."""
     if total:
         pct = current / total * 100
-        if pct % 20 < 1:   # Har 20% pe log karo
+        if pct % 20 < 1:
             log.info(
                 f"[{SOURCE_NAME}|Worker-{worker_id}] "
                 f"⬆️ Upload: {pct:.0f}% — {title[:30]}"
@@ -755,7 +739,6 @@ async def handle_start(update, context):
         parse_mode=ParseMode.HTML,
     )
 
-    # copy_message — forward tag nahi aata, original quality maintain hoti hai
     try:
         from_chat = _UPLOAD_PEER if _UPLOAD_PEER else _parse_channel_id(UPLOAD_CHANNEL_ID)
         footer    = VIDEO_FOOTER.format(bot_username=BOT_USERNAME)
@@ -776,7 +759,6 @@ async def handle_start(update, context):
 
     except FloodWait as e:
         await asyncio.sleep(e.value + 2)
-        # Retry once
         try:
             await _pyro_client.copy_message(
                 chat_id=user_id,
@@ -850,23 +832,28 @@ def _parse_channel_id(raw: str) -> int:
     Channel ID ko safely integer mein convert karo.
     Supports: '-100xxxxxxxxxx', '100xxxxxxxxxx', '@channel'
 
-    Private channel ke liye numeric ID chahiye:
-    → Telegram pe jaao → Channel Info → Copy ID
-    → Ya @userinfobot se lo
+    FIX: Pyrogram -100xxxxxxxxxx format directly accept nahi karta.
+    Isliye -100 prefix strip karke sirf xxxxxxxxxx pass karo.
     """
     raw = raw.strip()
 
     if raw.startswith("@"):
         # Username — Pyrogram resolve kar dega
-        # Lekin private channel ke liye numeric ID better hai
         return raw  # type: ignore
 
     try:
         val = int(raw)
-        # Agar positive ho aur 100 se start kare — make it -100xxxx
+
+        # ✅ FIX: -100xxxxxxxxxx → xxxxxxxxxx (Pyrogram ke liye)
+        if str(val).startswith("-100"):
+            return int(str(val)[4:])  # -1002178270630 → 2178270630
+
+        # Positive number as-is
         if val > 0:
-            return int(f"-100{val}")
+            return val
+
         return val
+
     except ValueError:
         raise ValueError(
             f"Invalid UPLOAD_CHANNEL_ID: '{raw}'\n"
@@ -921,13 +908,6 @@ def _cleanup_file(path: str):
 # FloodWait:
 #   → Bahut zyada requests — DOWNLOAD_WORKERS kam karo
 #   → Bot account pe flood limit hit ho rahi hai
-#
-# Motor not found:
-#   → pip install motor
-#   → main.py mein: from motor.motor_asyncio import AsyncIOMotorClient
-#   →   client = AsyncIOMotorClient(MONGO_URI)
-#   →   db = client["your_db"]
-#   →   kama_upload.init(db)
 #
 # ======================================================
 # Fixed by Professional Developer
