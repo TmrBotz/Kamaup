@@ -82,6 +82,7 @@ _pyro_client  = None          # Pyrogram client (singleton)
 _job_queue    = None          # asyncio.Queue
 _active_jobs  = set()         # post_id set — duplicate guard
 _workers_started = False
+_UPLOAD_PEER  = None          # Resolved integer chat_id — PEER_ID_INVALID fix
 
 # ══════════════════════════════════════════════
 # 🔌 INIT
@@ -119,17 +120,28 @@ async def start_workers(ptb_bot: Bot):
     await _pyro_client.start()
     log.info(f"[{SOURCE_NAME}|Upload] ✅ Pyrogram client started")
 
-    # ── Channel resolve karo — PEER_ID_INVALID fix ──
+    # ── Channel resolve karo — PEER_ID_INVALID permanent fix ──
+    # UPLOAD_CHANNEL_ID env se string aati hai.
+    # Pyrogram ko integer peer chahiye — get_chat() se resolved
+    # integer id (_UPLOAD_PEER) store karo, isko upload mein use karo.
+    global _UPLOAD_PEER
     try:
-        chat = await _pyro_client.get_chat(int(UPLOAD_CHANNEL_ID))
+        raw_id = UPLOAD_CHANNEL_ID.strip()
+        chat = await _pyro_client.get_chat(int(raw_id))
+        _UPLOAD_PEER = chat.id  # always Pyrogram-resolved integer
         log.info(
             f"[{SOURCE_NAME}|Upload] "
-            f"✅ Upload channel resolved: {chat.title}"
+            f"✅ Upload channel resolved: '{chat.title}' "
+            f"| type={chat.type} "
+            f"| peer_id={_UPLOAD_PEER} "
+            f"| env_value='{raw_id}'"
         )
     except Exception as e:
         log.error(
             f"[{SOURCE_NAME}|Upload] "
-            f"❌ Upload channel resolve failed: {e}"
+            f"❌ Upload channel resolve failed: {e} "
+            f"| Check KAMA_UPLOAD_CHANNEL_ID='{UPLOAD_CHANNEL_ID}' "
+            f"aur bot channel mein admin hai ya nahi."
         )
         raise
 
@@ -423,15 +435,29 @@ async def _upload_video(
     # Thumbnail download karo (temp file)
     thumb_path = await _download_thumbnail(thumbnail, worker_id)
 
+    # _UPLOAD_PEER = startup pe get_chat() se resolved integer id
+    # Agar kisi wajah se None ho to re-resolve karo
+    global _UPLOAD_PEER
+    if _UPLOAD_PEER is None:
+        log.warning(f"[{SOURCE_NAME}|Worker-{worker_id}] _UPLOAD_PEER None hai, re-resolving...")
+        try:
+            chat = await _pyro_client.get_chat(int(UPLOAD_CHANNEL_ID.strip()))
+            _UPLOAD_PEER = chat.id
+            log.info(f"[{SOURCE_NAME}|Worker-{worker_id}] Re-resolved: {_UPLOAD_PEER}")
+        except Exception as e:
+            log.error(f"[{SOURCE_NAME}|Worker-{worker_id}] Re-resolve failed: {e}")
+            return None
+
     for attempt in range(1, UPLOAD_RETRIES + 1):
         try:
             log.info(
                 f"[{SOURCE_NAME}|Worker-{worker_id}] "
-                f"⬆️ Upload attempt {attempt}: {title[:40]}"
+                f"⬆️ Upload attempt {attempt}: {title[:40]} "
+                f"| chat_id={_UPLOAD_PEER} (type={type(_UPLOAD_PEER).__name__})"
             )
 
             msg = await _pyro_client.send_video(
-                chat_id=UPLOAD_CHANNEL_ID,
+                chat_id=_UPLOAD_PEER,
                 video=file_path,
                 caption=f"🎬 {title}",
                 thumb=thumb_path if thumb_path else None,
@@ -707,7 +733,7 @@ async def handle_start(update, context):
 
         await _pyro_client.copy_message(
             chat_id=user_id,
-            from_chat_id=UPLOAD_CHANNEL_ID,
+            from_chat_id=_UPLOAD_PEER if _UPLOAD_PEER else int(UPLOAD_CHANNEL_ID.strip()),
             message_id=message_id,
             caption=(
                 f"🎬 Video\n{footer}"
