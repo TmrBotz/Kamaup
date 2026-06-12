@@ -18,6 +18,7 @@ Flow:
 """
 
 import os
+import re
 import asyncio
 import logging
 import tempfile
@@ -316,10 +317,11 @@ async def _download_video(
                 f"⬇️ Download attempt {attempt}: {url[:60]}"
             )
 
+            safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", post_id)[:40]
             tmp = tempfile.NamedTemporaryFile(
                 suffix=".mp4",
                 delete=False,
-                prefix=f"kama_{post_id}_",
+                prefix=f"kama_{safe_id}_",
             )
             tmp_path = tmp.name
             tmp.close()
