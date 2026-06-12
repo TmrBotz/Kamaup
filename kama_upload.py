@@ -111,37 +111,53 @@ async def start_workers(ptb_bot: Bot):
 
     # ── Pyrogram client init ──────────────────
     _pyro_client = Client(
-        name="kama_uploader",
+        name="/tmp/kama_uploader",   # session file /tmp mein save hogi
         api_id=API_ID,
         api_hash=API_HASH,
         bot_token=BOT_TOKEN,
-        in_memory=True,          # session file nahi banegi
     )
     await _pyro_client.start()
     log.info(f"[{SOURCE_NAME}|Upload] ✅ Pyrogram client started")
 
     # ── Channel resolve karo — PEER_ID_INVALID permanent fix ──
-    # UPLOAD_CHANNEL_ID env se string aati hai.
-    # Pyrogram ko integer peer chahiye — get_chat() se resolved
-    # integer id (_UPLOAD_PEER) store karo, isko upload mein use karo.
+    # Problem: Pyrogram in_memory=True ke saath fresh start pe
+    # peer cache empty hota hai. get_chat(integer) tab fail karta
+    # hai jab peer pehle kabhi seen na ho.
+    # Fix: GetDialogs se saare channels fetch karo — isse Pyrogram
+    # apna internal peer cache populate kar leta hai. Tab get_chat()
+    # kaam karta hai.
     global _UPLOAD_PEER
     try:
-        raw_id = UPLOAD_CHANNEL_ID.strip()
-        chat = await _pyro_client.get_chat(int(raw_id))
-        _UPLOAD_PEER = chat.id  # always Pyrogram-resolved integer
+        raw_id = int(UPLOAD_CHANNEL_ID.strip())
+
+        # Pyrogram bot mode mein peer resolve karne ka sahi tarika:
+        # send_chat_action() — isse Pyrogram internally peer lookup
+        # karta hai aur session file mein cache ho jaata hai.
+        # Pehli baar thoda time lagta hai, uske baad session file
+        # mein save rehta hai aur restart pe bhi kaam karta hai.
+        log.info(f"[{SOURCE_NAME}|Upload] Resolving upload channel peer...")
+        await _pyro_client.send_chat_action(
+            chat_id=raw_id,
+            action="cancel",
+        )
+
+        chat = await _pyro_client.get_chat(raw_id)
+        _UPLOAD_PEER = chat.id
         log.info(
             f"[{SOURCE_NAME}|Upload] "
             f"✅ Upload channel resolved: '{chat.title}' "
-            f"| type={chat.type} "
             f"| peer_id={_UPLOAD_PEER} "
-            f"| env_value='{raw_id}'"
+            f"| type={chat.type}"
         )
     except Exception as e:
         log.error(
             f"[{SOURCE_NAME}|Upload] "
             f"❌ Upload channel resolve failed: {e} "
-            f"| Check KAMA_UPLOAD_CHANNEL_ID='{UPLOAD_CHANNEL_ID}' "
-            f"aur bot channel mein admin hai ya nahi."
+            f"| KAMA_UPLOAD_CHANNEL_ID='{UPLOAD_CHANNEL_ID}'
+"
+            f"  → Bot ko channel mein PEHLE ek message manually bhejo,
+"
+            f"    tab restart karo. Session file /tmp mein save hogi."
         )
         raise
 
