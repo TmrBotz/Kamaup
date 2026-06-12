@@ -160,13 +160,10 @@ async def start_workers(ptb_bot: Bot):
         )
     except Exception as e:
         log.error(
-            f"[{SOURCE_NAME}|Upload] "
-            f"❌ Upload channel resolve failed: {e} "
-            f"| KAMA_UPLOAD_CHANNEL_ID='{UPLOAD_CHANNEL_ID}'
-"
-            f"  → Bot ko channel mein PEHLE ek message manually bhejo,
-"
-            f"    tab restart karo. Session file /tmp mein save hogi."
+            "[%s|Upload] ❌ Upload channel resolve failed: %s "
+            "| KAMA_UPLOAD_CHANNEL_ID='%s'"
+            " → Session file /tmp mein save hogi.",
+            SOURCE_NAME, e, UPLOAD_CHANNEL_ID
         )
         raise
 
