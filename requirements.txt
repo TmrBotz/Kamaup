@@ -7,3 +7,4 @@ pymongo==4.7.3
 pyrogram==2.0.106
 TgCrypto
 aiohttp
+motor==3.6.0
